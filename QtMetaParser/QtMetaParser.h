@@ -28,6 +28,22 @@ struct QtMetaData
 	unsigned int signalCount;
 };
 
+struct QMethodData
+{
+	//函数名称
+	std::string methodName;
+	//返回值类型
+	std::string retType;
+	//参数个数
+	int argCount;
+	//参数所在偏移
+	std::uint32_t paramOffset;
+	//参数类型
+	std::vector<std::string> paramsType;
+	//参数名
+	std::vector<std::string> paramsName;
+};
+
 class QtMetaParser
 {
 public:
@@ -38,6 +54,9 @@ public:
 private:
 	bool parseStringData(ea_t addr);
 	bool parseMetaData(ea_t addr);
+	std::string getParamType(std::uint32_t paramIndex);
 private:
 	std::vector<std::string> stringDataList;
+	std::vector<QMethodData> signalMethodList;
+	std::vector<QMethodData> slotMethodList;
 };
