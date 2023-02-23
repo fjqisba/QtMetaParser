@@ -4,4 +4,8 @@
     <LocalDebuggerCommand>C:\CrackTool\IDA 7.5 SP3\ida64.exe</LocalDebuggerCommand>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Qt32Debug|x64'">
+    <LocalDebuggerCommand>C:\CrackTool\IDA 7.5 SP3\ida.exe</LocalDebuggerCommand>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
 </Project>

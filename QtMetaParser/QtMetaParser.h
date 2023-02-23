@@ -35,7 +35,7 @@ struct QMethodData
 	//返回值类型
 	std::string retType;
 	//参数个数
-	int argCount;
+	unsigned int argCount;
 	//参数所在偏移
 	std::uint32_t paramOffset;
 	//参数类型
@@ -52,7 +52,8 @@ public:
 public:
 	void StartParse();
 private:
-	bool parseStringData(ea_t addr);
+	bool parseStringData32(ea_t addr);
+	bool parseStringData64(ea_t addr);
 	bool parseMetaData(ea_t addr);
 	std::string getParamType(std::uint32_t paramIndex);
 private:

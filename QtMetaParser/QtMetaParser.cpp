@@ -27,7 +27,7 @@ void InitQMetaTypeMap()
 	gMapQMetaType[16] = "QDateTime";
 	gMapQMetaType[17] = "QUrl";
 	gMapQMetaType[18] = "QLocale";
-	gMapQMetaType[19] == "QRect";
+	gMapQMetaType[19] = "QRect";
 	gMapQMetaType[20] = "QRectF";
 	gMapQMetaType[21] = "QSize";
 	gMapQMetaType[22] = "QSizeF";
@@ -227,20 +227,60 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 	return true;
 }
 
-bool QtMetaParser::parseStringData(ea_t addr)
+bool QtMetaParser::parseStringData32(ea_t addr)
 {
 	ea_t startAddr = addr;
-	//确认过眼神,是正确的数据
-	while (get_dword(startAddr) == 0xFFFFFFFF && !get_dword(startAddr + 8)) {
-		std::uint32_t len = get_dword(startAddr + 0x4);
-		std::uint32_t offset = get_dword(startAddr + 0x10);
+	struct stringElement
+	{
+		std::uint32_t startFlag;
+		std::uint32_t len;
+		std::uint32_t unknown;
+		std::uint32_t offset;
+	};
+	while (true) {
+		stringElement tmpElement = { 0 };
+		if (get_bytes(&tmpElement, sizeof(stringElement), startAddr) == -1) {
+			return false;
+		}
+		if (tmpElement.startFlag != -1 || tmpElement.unknown) {
+			break;
+		}
 		std::string tmpStr;
-		if (len) {
-			tmpStr = IDAWrapper::get_shortstring(startAddr + offset);
+		if (tmpElement.len) {
+			tmpStr = IDAWrapper::get_shortstring(startAddr + tmpElement.offset);
 		}
 		stringDataList.push_back(tmpStr);
-		startAddr = startAddr + 0x18;
-	}
+		startAddr = startAddr + sizeof(stringElement);
+	};
+	return true;
+}
+
+bool QtMetaParser::parseStringData64(ea_t addr)
+{
+	ea_t startAddr = addr;
+	struct stringElement
+	{
+		std::uint32_t startFlag;
+		std::uint32_t len;
+		std::uint64_t unknown;
+		std::uint64_t offset;
+	};
+	while (true) {
+		stringElement tmpElement = { 0 };
+		if (get_bytes(&tmpElement, sizeof(stringElement), startAddr) == -1) {
+			return false;
+		}
+		if (tmpElement.startFlag != -1 || tmpElement.unknown) {
+			break;
+		}
+		std::string tmpStr;
+		if (tmpElement.len) {
+			tmpStr = IDAWrapper::get_shortstring(startAddr + tmpElement.offset);
+		}
+		stringDataList.push_back(tmpStr);
+		startAddr = startAddr + sizeof(stringElement);
+	};
+
 	return true;
 }
 
@@ -253,7 +293,10 @@ void QtMetaParser::StartParse()
 	if (get_bytes(&metaObject, sizeof(metaObject), addr) != sizeof(metaObject)) {
 		int a=0;
 	}
-	
-	parseStringData(metaObject.stringdata);
+#ifdef __EA64__
+	parseStringData64(metaObject.stringdata);
+#else
+	parseStringData32(metaObject.stringdata);
+#endif
 	parseMetaData(metaObject.data);
 }
