@@ -227,15 +227,15 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 	return true;
 }
 
-bool QtMetaParser::parseStringData32(ea_t addr)
+bool QtMetaParser::parseStringData(ea_t addr)
 {
 	ea_t startAddr = addr;
 	struct stringElement
 	{
 		std::uint32_t startFlag;
 		std::uint32_t len;
-		std::uint32_t unknown;
-		std::uint32_t offset;
+		ea_t unknown;
+		ea_t offset;
 	};
 	while (true) {
 		stringElement tmpElement = { 0 };
@@ -255,34 +255,6 @@ bool QtMetaParser::parseStringData32(ea_t addr)
 	return true;
 }
 
-bool QtMetaParser::parseStringData64(ea_t addr)
-{
-	ea_t startAddr = addr;
-	struct stringElement
-	{
-		std::uint32_t startFlag;
-		std::uint32_t len;
-		std::uint64_t unknown;
-		std::uint64_t offset;
-	};
-	while (true) {
-		stringElement tmpElement = { 0 };
-		if (get_bytes(&tmpElement, sizeof(stringElement), startAddr) == -1) {
-			return false;
-		}
-		if (tmpElement.startFlag != -1 || tmpElement.unknown) {
-			break;
-		}
-		std::string tmpStr;
-		if (tmpElement.len) {
-			tmpStr = IDAWrapper::get_shortstring(startAddr + tmpElement.offset);
-		}
-		stringDataList.push_back(tmpStr);
-		startAddr = startAddr + sizeof(stringElement);
-	};
-
-	return true;
-}
 
 
 void QtMetaParser::StartParse()
@@ -293,10 +265,6 @@ void QtMetaParser::StartParse()
 	if (get_bytes(&metaObject, sizeof(metaObject), addr) != sizeof(metaObject)) {
 		int a=0;
 	}
-#ifdef __EA64__
-	parseStringData64(metaObject.stringdata);
-#else
-	parseStringData32(metaObject.stringdata);
-#endif
+	parseStringData(metaObject.stringdata);
 	parseMetaData(metaObject.data);
 }

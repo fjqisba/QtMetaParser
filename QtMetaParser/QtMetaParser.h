@@ -52,8 +52,7 @@ public:
 public:
 	void StartParse();
 private:
-	bool parseStringData32(ea_t addr);
-	bool parseStringData64(ea_t addr);
+	bool parseStringData(ea_t addr);
 	bool parseMetaData(ea_t addr);
 	std::string getParamType(std::uint32_t paramIndex);
 private:
