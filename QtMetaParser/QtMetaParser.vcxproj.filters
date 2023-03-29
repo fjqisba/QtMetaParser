@@ -27,6 +27,9 @@
     <ClCompile Include="Public\IDAWrapper.cpp">
       <Filter>Public</Filter>
     </ClCompile>
+    <ClCompile Include="Common.cpp">
+      <Filter>头文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="QtMetaParser.h">

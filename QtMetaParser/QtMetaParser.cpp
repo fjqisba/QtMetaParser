@@ -2,7 +2,9 @@
 #include <bytes.hpp>
 #include <kernwin.hpp>
 #include <map>
+#include <algorithm>
 #include "./Public/IDAWrapper.h"
+#include "Common.h"
 
 std::map<unsigned int, std::string> gMapQMetaType;
 
@@ -117,7 +119,142 @@ QtMetaParser::~QtMetaParser()
 
 }
 
+bool QtMetaParser::parseMetaData_4(ea_t addr)
+{
+	struct QtMetaDataHeader
+	{
+		unsigned int revision;
+		unsigned int classname;
+		unsigned int classinfoCount, classinfoData;
+		unsigned int methodCount, methodData;
+		unsigned int propertyCount, propertyData;
+		unsigned int enumeratorCount, enumeratorData;
+		unsigned int constructorCount, constructorData;
+		unsigned int flags;
+		unsigned int signalCount;
+	};
+	ea_t startAddr = addr;
+	QtMetaDataHeader header;
+	get_bytes(&header, sizeof(QtMetaDataHeader), startAddr);
+	startAddr = startAddr + sizeof(QtMetaDataHeader);
 
+	std::vector<QMethodData_4> signalMethodList;
+	std::vector<QMethodData_4> slotMethodList;
+
+	for (unsigned int n = 0; n < header.signalCount; ++n) {
+
+		QMethodData_4 tmpMethod;
+		unsigned int signalOffset = get_dword(startAddr);
+		//函数签名,包含函数名称和函数类型
+		tmpMethod.methodSignature = IDAWrapper::get_shortstring(metaObject.stringdata + signalOffset);
+		//只有参数的名称
+		tmpMethod.paramName = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x4));
+		tmpMethod.retType = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x8));
+		unsigned int tag = get_dword(startAddr + 0xC);
+		unsigned int flags = get_dword(startAddr + 0x10);
+		signalMethodList.push_back(tmpMethod);
+		startAddr = startAddr + 0x14;
+	}
+
+	for (unsigned int n = 0; n < header.methodCount - header.signalCount; ++n) {
+		QMethodData_4 tmpMethod;
+		unsigned int slotOffset = get_dword(startAddr);
+		//函数签名,包含函数名称和函数类型
+		tmpMethod.methodSignature = IDAWrapper::get_shortstring(metaObject.stringdata + slotOffset);
+		//只有参数的名称
+		tmpMethod.paramName = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x4));
+		tmpMethod.retType = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x8));
+		unsigned int tag = get_dword(startAddr + 0xC);
+		unsigned int flags = get_dword(startAddr + 0x10);
+		slotMethodList.push_back(tmpMethod);
+		startAddr = startAddr + 0x14;
+	}
+
+	//开始生成完整的函数签名
+	std::string className = IDAWrapper::get_shortstring(metaObject.stringdata);
+	for (unsigned int n = 0; n < signalMethodList.size(); ++n) {
+		if (signalMethodList[n].retType == "") {
+			signalMethodList[n].retType = "void";
+		}
+		std::string funcSrc = signalMethodList[n].retType + " ";
+		int start = signalMethodList[n].methodSignature.find('(');
+		int end = signalMethodList[n].methodSignature.find(')');
+		if (start == -1 || end == -1) {
+			return false;
+		}
+		std::string functionName = className + "::" + signalMethodList[n].methodSignature.substr(0, start);
+		funcSrc = funcSrc + functionName + "(";
+		//参数个数不为0
+		if (end != start + 1) {
+			//参数个数为1
+			if (!std::count(signalMethodList[n].methodSignature.begin(), signalMethodList[n].methodSignature.end(), ',')) {
+				funcSrc = funcSrc + signalMethodList[n].methodSignature.substr(start + 1, end - start - 1) + " " + signalMethodList[n].paramName;
+			}
+			else {
+				std::vector<std::string> pararmNameList = split(signalMethodList[n].paramName, ',');
+				std::vector<std::string> paramTypeList = split(signalMethodList[n].methodSignature.substr(start + 1, end - start - 1), ',');
+				if (paramTypeList.size() != pararmNameList.size()) {
+					//可能是哥写的代码出问题了
+					return false;
+				}
+				for (unsigned int k = 0; k < paramTypeList.size(); ++k) {
+					funcSrc = funcSrc + paramTypeList[k] + " " + pararmNameList[k] + ",";
+				}
+				funcSrc.pop_back();
+			}
+		}
+		funcSrc = funcSrc + ")";
+		signalMethodList[n].functionSrc = funcSrc;
+	}
+
+	for (unsigned int n = 0; n < slotMethodList.size(); ++n) {
+		if (slotMethodList[n].retType == "") {
+			slotMethodList[n].retType = "void";
+		}
+		std::string funcSrc = slotMethodList[n].retType + " ";
+		int start = slotMethodList[n].methodSignature.find('(');
+		int end = slotMethodList[n].methodSignature.find(')');
+		if (start == -1 || end == -1) {
+			return false;
+		}
+		std::string functionName = className + "::" + slotMethodList[n].methodSignature.substr(0, start);
+		funcSrc = funcSrc + functionName + "(";
+		//参数个数不为0
+		if (end != start + 1) {
+			//参数个数为1
+			if (!std::count(slotMethodList[n].methodSignature.begin(), slotMethodList[n].methodSignature.end(), ',')) {
+				funcSrc = funcSrc + slotMethodList[n].methodSignature.substr(start + 1, end - start - 1) + " " + slotMethodList[n].paramName;
+			}
+			else {
+				std::vector<std::string> pararmNameList = split(slotMethodList[n].paramName, ',');
+				std::vector<std::string> paramTypeList = split(slotMethodList[n].methodSignature.substr(start + 1, end - start - 1), ',');
+				if (paramTypeList.size() != pararmNameList.size()) {
+					//可能是哥写的代码出问题了
+					return false;
+				}
+				for (unsigned int k = 0; k < paramTypeList.size(); ++k) {
+					funcSrc = funcSrc + paramTypeList[k] + " " + pararmNameList[k] + ",";
+				}
+				funcSrc.pop_back();
+			}
+		}
+		funcSrc = funcSrc + ")";
+		slotMethodList[n].functionSrc = funcSrc;
+	}
+
+	//————开始输出结果——————
+	msg_clear();
+	int index = 0;
+	msg("signal count(%d):\n", signalMethodList.size());
+	for (unsigned int n = 0; n < signalMethodList.size(); ++n) {
+		msg("%d %s\n", index++, signalMethodList[n].functionSrc.c_str());
+	}
+	msg("slot count(%d):\n", slotMethodList.size());
+	for (unsigned int n = 0; n < slotMethodList.size(); ++n) {
+		msg("%d %s\n", index++, slotMethodList[n].functionSrc.c_str());
+	}
+	return true;
+}
 
 bool QtMetaParser::parseMetaData(ea_t addr)
 {
@@ -139,6 +276,10 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 	get_bytes(&header,sizeof(QtMetaDataHeader), startAddr);
 	startAddr = startAddr + sizeof(QtMetaDataHeader);
 
+
+	std::vector<QMethodData> signalMethodList;
+	std::vector<QMethodData> slotMethodList;
+
 	for (unsigned int n = 0; n < header.signalCount; ++n) {
 		QMethodData tmpMethod;
 		unsigned int signalIdx = get_dword(startAddr);
@@ -147,7 +288,7 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 		tmpMethod.paramOffset = get_dword(startAddr + 0x8);
 		unsigned int tag = get_dword(startAddr + 0xC);
 		unsigned int flags = get_dword(startAddr + 0x10);
-		this->signalMethodList.push_back(tmpMethod);
+		signalMethodList.push_back(tmpMethod);
 		startAddr = startAddr + 0x14;
 	}
 
@@ -159,7 +300,7 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 		tmpMethod.paramOffset = get_dword(startAddr + 0x8);
 		unsigned int tag = get_dword(startAddr + 0xC);
 		unsigned int flags = get_dword(startAddr + 0x10);
-		this->slotMethodList.push_back(tmpMethod);
+		slotMethodList.push_back(tmpMethod);
 		startAddr = startAddr + 0x14;
 	}
 
@@ -199,8 +340,8 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 
 	//开始输出结果
 	msg_clear();
-	msg("signal count(%d):\n",this->signalMethodList.size());
-	for (unsigned int n = 0; n < this->signalMethodList.size(); ++n) {
+	msg("signal count(%d):\n",signalMethodList.size());
+	for (unsigned int n = 0; n < signalMethodList.size(); ++n) {
 		std::string methodMsg = signalMethodList[n].retType + " " + signalMethodList[n].methodName + "(";
 		for (unsigned int m = 0; m < signalMethodList[n].argCount; ++m) {
 			methodMsg = methodMsg + signalMethodList[n].paramsType[m] + " " + signalMethodList[n].paramsName[m] + ",";
@@ -212,8 +353,8 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 		msg("%s\n", methodMsg.c_str());
 	}
 
-	msg("slot count(%d):\n", this->slotMethodList.size());
-	for (unsigned int n = 0; n < this->slotMethodList.size(); ++n) {
+	msg("slot count(%d):\n", slotMethodList.size());
+	for (unsigned int n = 0; n < slotMethodList.size(); ++n) {
 		std::string methodMsg = slotMethodList[n].retType + " " + slotMethodList[n].methodName + "(";
 		for (unsigned int m = 0; m < slotMethodList[n].argCount; ++m) {
 			methodMsg = methodMsg + slotMethodList[n].paramsType[m] + " " + slotMethodList[n].paramsName[m] + ",";
@@ -261,10 +402,21 @@ void QtMetaParser::StartParse()
 {
 	ea_t addr = get_screen_ea();
 	msg("parse addr:%08X\n",addr);
-	QMetaObject_d metaObject = { 0 };
+	metaObject = { 0 };
 	if (get_bytes(&metaObject, sizeof(metaObject), addr) != sizeof(metaObject)) {
-		int a=0;
+		int a = 0;
 	}
-	parseStringData(metaObject.stringdata);
-	parseMetaData(metaObject.data);
+
+	//获取QT版本号
+	int revision = get_dword(metaObject.data);
+	
+	if (revision == 5) {
+		//Qt4.x低版本
+		parseMetaData_4(metaObject.data);
+	}
+	//To do..也许有更多分支
+	else {
+		parseStringData(metaObject.stringdata);
+		parseMetaData(metaObject.data);
+	}
 }
