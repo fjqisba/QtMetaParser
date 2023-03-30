@@ -119,6 +119,40 @@ QtMetaParser::~QtMetaParser()
 
 }
 
+//定制,用于识别函数签名,返回参数类型
+std::vector<std::string> recognizeFunctionParamsTypeList(std::string& functionSignature)
+{
+	std::vector<std::string> retList;
+
+	size_t paramStart = functionSignature.find('(');
+	size_t paramEnd = functionSignature.rfind(')');
+	if (paramStart == -1 || paramEnd == -1) {
+		return retList;
+	}
+	std::string paramListString = functionSignature.substr(paramStart + 1, paramEnd - paramStart - 1);
+	std::string currentParam;
+	size_t openBrackets = 0;
+	for (char c : paramListString) {
+		if (c == '<') {
+			++openBrackets;
+			currentParam += c;
+		}
+		else if (c == '>') {
+			--openBrackets;
+			currentParam += c;
+		}
+		else if (c == ',' && openBrackets == 0) {
+			retList.push_back(currentParam);
+			currentParam.clear();
+		}
+		else {
+			currentParam += c;
+		}
+	}
+	retList.push_back(currentParam);
+	return retList;
+}
+
 bool QtMetaParser::parseMetaData_4(ea_t addr)
 {
 	struct QtMetaDataHeader
@@ -192,7 +226,7 @@ bool QtMetaParser::parseMetaData_4(ea_t addr)
 			}
 			else {
 				std::vector<std::string> pararmNameList = split(signalMethodList[n].paramName, ',');
-				std::vector<std::string> paramTypeList = split(signalMethodList[n].methodSignature.substr(start + 1, end - start - 1), ',');
+				std::vector<std::string> paramTypeList = recognizeFunctionParamsTypeList(signalMethodList[n].methodSignature);
 				if (paramTypeList.size() != pararmNameList.size()) {
 					//可能是哥写的代码出问题了
 					return false;
@@ -227,7 +261,7 @@ bool QtMetaParser::parseMetaData_4(ea_t addr)
 			}
 			else {
 				std::vector<std::string> pararmNameList = split(slotMethodList[n].paramName, ',');
-				std::vector<std::string> paramTypeList = split(slotMethodList[n].methodSignature.substr(start + 1, end - start - 1), ',');
+				std::vector<std::string> paramTypeList = recognizeFunctionParamsTypeList(slotMethodList[n].methodSignature);
 				if (paramTypeList.size() != pararmNameList.size()) {
 					//可能是哥写的代码出问题了
 					return false;
