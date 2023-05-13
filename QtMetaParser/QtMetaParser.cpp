@@ -119,6 +119,21 @@ QtMetaParser::~QtMetaParser()
 
 }
 
+//定制,用户识别参数名称列表
+std::vector<std::string> recognizeFunctionParamsNameList(std::string paramNameSignature)
+{
+	std::vector<std::string> retList;
+	size_t paramStart = paramNameSignature.find(',');
+	while (paramStart != -1) {
+		std::string tmpParamName = paramNameSignature.substr(0,paramStart);
+		retList.push_back(tmpParamName);
+		paramNameSignature = paramNameSignature.substr(paramStart+1);
+		paramStart = paramNameSignature.find(',');
+	}	
+	retList.push_back(paramNameSignature);
+	return retList;
+}
+
 //定制,用于识别函数签名,返回参数类型
 std::vector<std::string> recognizeFunctionParamsTypeList(std::string& functionSignature)
 {
@@ -225,7 +240,7 @@ bool QtMetaParser::parseMetaData_4(ea_t addr)
 				funcSrc = funcSrc + signalMethodList[n].methodSignature.substr(start + 1, end - start - 1) + " " + signalMethodList[n].paramName;
 			}
 			else {
-				std::vector<std::string> pararmNameList = split(signalMethodList[n].paramName, ',');
+				std::vector<std::string> pararmNameList = recognizeFunctionParamsNameList(signalMethodList[n].paramName);
 				std::vector<std::string> paramTypeList = recognizeFunctionParamsTypeList(signalMethodList[n].methodSignature);
 				if (paramTypeList.size() != pararmNameList.size()) {
 					//可能是哥写的代码出问题了
@@ -260,7 +275,7 @@ bool QtMetaParser::parseMetaData_4(ea_t addr)
 				funcSrc = funcSrc + slotMethodList[n].methodSignature.substr(start + 1, end - start - 1) + " " + slotMethodList[n].paramName;
 			}
 			else {
-				std::vector<std::string> pararmNameList = split(slotMethodList[n].paramName, ',');
+				std::vector<std::string> pararmNameList = recognizeFunctionParamsNameList(slotMethodList[n].paramName);
 				std::vector<std::string> paramTypeList = recognizeFunctionParamsTypeList(slotMethodList[n].methodSignature);
 				if (paramTypeList.size() != pararmNameList.size()) {
 					//可能是哥写的代码出问题了
@@ -434,6 +449,8 @@ bool QtMetaParser::parseStringData(ea_t addr)
 
 void QtMetaParser::StartParse()
 {
+	std::vector<std::string> aa = recognizeFunctionParamsNameList(",");
+
 	ea_t addr = get_screen_ea();
 	msg("parse addr:%08X\n",addr);
 	metaObject = { 0 };
