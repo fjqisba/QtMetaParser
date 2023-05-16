@@ -389,7 +389,8 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 
 	//开始输出结果
 	msg_clear();
-	msg("signal count(%d):\n",signalMethodList.size());
+	int index = 0;
+	msg("signal count(%d):\n", signalMethodList.size());
 	for (unsigned int n = 0; n < signalMethodList.size(); ++n) {
 		std::string methodMsg = signalMethodList[n].retType + " " + signalMethodList[n].methodName + "(";
 		for (unsigned int m = 0; m < signalMethodList[n].argCount; ++m) {
@@ -399,7 +400,7 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 			methodMsg.pop_back();
 		}
 		methodMsg = methodMsg + ")";
-		msg("%s\n", methodMsg.c_str());
+		msg("%d %s\n", index++, methodMsg.c_str());
 	}
 
 	msg("slot count(%d):\n", slotMethodList.size());
@@ -412,7 +413,7 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 			methodMsg.pop_back();
 		}
 		methodMsg = methodMsg + ")";
-		msg("%s\n", methodMsg.c_str());
+		msg("%d %s\n", index++, methodMsg.c_str());
 	}
 	return true;
 }
