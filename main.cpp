@@ -38,8 +38,15 @@ bool idaapi plugin_ctx_t::run(size_t)
 	{
 		return true;
 	}
-	QtMetaParser metaParser;
-	metaParser.StartParse();
+	if (inf_is_64bit()) {
+		QtMetaParser<std::uint64_t> metaParser;
+		metaParser.StartParse();
+	}
+	else {
+		QtMetaParser<std::uint32_t> metaParser;
+		metaParser.StartParse();
+	}
+
 	return true;
 }
 

@@ -21,9 +21,6 @@
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="QtMetaParser.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="Public\IDAWrapper.cpp">
       <Filter>Public</Filter>
     </ClCompile>

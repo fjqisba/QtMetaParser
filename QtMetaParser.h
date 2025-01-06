@@ -1,12 +1,55 @@
-ï»¿#include "QtMetaParser.h"
+#pragma once
+#include <pro.h>
+#include <vector>
 #include <bytes.hpp>
 #include <kernwin.hpp>
 #include <map>
 #include <algorithm>
+#include "QtMetaParser.h"
 #include "./Public/IDAWrapper.h"
 #include "Common.h"
 
 std::map<unsigned int, std::string> gMapQMetaType;
+
+template<typename T>
+struct QMetaObject_d
+{
+	T superdata;
+	T stringdata;
+	T data;
+	T static_metacall;
+	T relatedMetaObjects;
+	//reserved for future use
+	T extradata;
+};
+
+struct QMethodData_4
+{
+	//º¯ÊıÇ©Ãû
+	std::string methodSignature;
+	//²ÎÊıÃû³Æ
+	std::string paramName;
+	//·µ»ØÖµÀàĞÍ
+	std::string retType;
+	//ÍêÕûµÄÔ´Âë
+	std::string functionSrc;
+};
+
+struct QMethodData
+{
+	//º¯ÊıÃû³Æ
+	std::string methodName;
+	//·µ»ØÖµÀàĞÍ
+	std::string retType;
+	//²ÎÊı¸öÊı
+	unsigned int argCount;
+	//²ÎÊıËùÔÚÆ«ÒÆ
+	std::uint32_t paramOffset;
+	//²ÎÊıÀàĞÍ
+	std::vector<std::string> paramsType;
+	//²ÎÊıÃû
+	std::vector<std::string> paramsName;
+};
 
 void InitQMetaTypeMap()
 {
@@ -96,12 +139,36 @@ void InitQMetaTypeMap()
 	gMapQMetaType[1024] = "User";
 }
 
-std::string QtMetaParser::getParamType(std::uint32_t paramIndex)
+
+template<typename T>
+class QtMetaParser
+{
+public:
+	QtMetaParser();
+	void StartParse();
+private:
+	bool parseMetaData_4(T addr);
+	bool parseStringData(T addr);
+	bool parseMetaData(T addr);
+	std::string getParamType(std::uint32_t paramIndex);
+private:
+	std::vector<std::string> stringDataList;
+	QMetaObject_d<T> metaObject;
+};
+
+
+template<typename T>
+QtMetaParser<T>::QtMetaParser()
+{
+	InitQMetaTypeMap();
+}
+
+template<typename T>
+std::string QtMetaParser<T>::getParamType(std::uint32_t paramIndex)
 {
 	if (paramIndex & 0x80000000) {
 		return this->stringDataList[paramIndex & 0xFFFFFFF];
 	}
-
 	std::map<unsigned int, std::string>::iterator it = gMapQMetaType.find(paramIndex);
 	if (it != gMapQMetaType.end()) {
 		return it->second;
@@ -109,32 +176,22 @@ std::string QtMetaParser::getParamType(std::uint32_t paramIndex)
 	return "Unknown";
 }
 
-QtMetaParser::QtMetaParser()
-{
-	InitQMetaTypeMap();
-}
-
-QtMetaParser::~QtMetaParser()
-{
-
-}
-
-//å®šåˆ¶,ç”¨æˆ·è¯†åˆ«å‚æ•°åç§°åˆ—è¡¨
+//¶¨ÖÆ,ÓÃ»§Ê¶±ğ²ÎÊıÃû³ÆÁĞ±í
 std::vector<std::string> recognizeFunctionParamsNameList(std::string paramNameSignature)
 {
 	std::vector<std::string> retList;
 	size_t paramStart = paramNameSignature.find(',');
 	while (paramStart != -1) {
-		std::string tmpParamName = paramNameSignature.substr(0,paramStart);
+		std::string tmpParamName = paramNameSignature.substr(0, paramStart);
 		retList.push_back(tmpParamName);
-		paramNameSignature = paramNameSignature.substr(paramStart+1);
+		paramNameSignature = paramNameSignature.substr(paramStart + 1);
 		paramStart = paramNameSignature.find(',');
-	}	
+	}
 	retList.push_back(paramNameSignature);
 	return retList;
 }
 
-//å®šåˆ¶,ç”¨äºè¯†åˆ«å‡½æ•°ç­¾å,è¿”å›å‚æ•°ç±»å‹
+//¶¨ÖÆ,ÓÃÓÚÊ¶±ğº¯ÊıÇ©Ãû,·µ»Ø²ÎÊıÀàĞÍ
 std::vector<std::string> recognizeFunctionParamsTypeList(std::string& functionSignature)
 {
 	std::vector<std::string> retList;
@@ -168,161 +225,54 @@ std::vector<std::string> recognizeFunctionParamsTypeList(std::string& functionSi
 	return retList;
 }
 
-bool QtMetaParser::parseMetaData_4(ea_t addr)
+template<typename T>
+bool QtMetaParser<T>::parseStringData(T addr)
 {
-	struct QtMetaDataHeader
+	T startAddr = addr;
+	struct stringElement
 	{
-		unsigned int revision;
-		unsigned int classname;
-		unsigned int classinfoCount, classinfoData;
-		unsigned int methodCount, methodData;
-		unsigned int propertyCount, propertyData;
-		unsigned int enumeratorCount, enumeratorData;
-		unsigned int constructorCount, constructorData;
-		unsigned int flags;
-		unsigned int signalCount;
+		std::uint32_t startFlag;
+		std::uint32_t len;
+		T unknown;
+		T offset;
 	};
-	ea_t startAddr = addr;
-	QtMetaDataHeader header;
-	get_bytes(&header, sizeof(QtMetaDataHeader), startAddr);
-	startAddr = startAddr + sizeof(QtMetaDataHeader);
-
-	std::vector<QMethodData_4> signalMethodList;
-	std::vector<QMethodData_4> slotMethodList;
-
-	for (unsigned int n = 0; n < header.signalCount; ++n) {
-
-		QMethodData_4 tmpMethod;
-		unsigned int signalOffset = get_dword(startAddr);
-		//å‡½æ•°ç­¾å,åŒ…å«å‡½æ•°åç§°å’Œå‡½æ•°ç±»å‹
-		tmpMethod.methodSignature = IDAWrapper::get_shortstring(metaObject.stringdata + signalOffset);
-		//åªæœ‰å‚æ•°çš„åç§°
-		tmpMethod.paramName = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x4));
-		tmpMethod.retType = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x8));
-		unsigned int tag = get_dword(startAddr + 0xC);
-		unsigned int flags = get_dword(startAddr + 0x10);
-		signalMethodList.push_back(tmpMethod);
-		startAddr = startAddr + 0x14;
-	}
-
-	for (unsigned int n = 0; n < header.methodCount - header.signalCount; ++n) {
-		QMethodData_4 tmpMethod;
-		unsigned int slotOffset = get_dword(startAddr);
-		//å‡½æ•°ç­¾å,åŒ…å«å‡½æ•°åç§°å’Œå‡½æ•°ç±»å‹
-		tmpMethod.methodSignature = IDAWrapper::get_shortstring(metaObject.stringdata + slotOffset);
-		//åªæœ‰å‚æ•°çš„åç§°
-		tmpMethod.paramName = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x4));
-		tmpMethod.retType = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x8));
-		unsigned int tag = get_dword(startAddr + 0xC);
-		unsigned int flags = get_dword(startAddr + 0x10);
-		slotMethodList.push_back(tmpMethod);
-		startAddr = startAddr + 0x14;
-	}
-
-	//å¼€å§‹ç”Ÿæˆå®Œæ•´çš„å‡½æ•°ç­¾å
-	std::string className = IDAWrapper::get_shortstring(metaObject.stringdata);
-	for (unsigned int n = 0; n < signalMethodList.size(); ++n) {
-		if (signalMethodList[n].retType == "") {
-			signalMethodList[n].retType = "void";
-		}
-		std::string funcSrc = signalMethodList[n].retType + " ";
-		int start = signalMethodList[n].methodSignature.find('(');
-		int end = signalMethodList[n].methodSignature.find(')');
-		if (start == -1 || end == -1) {
+	while (true) {
+		stringElement tmpElement = { 0 };
+		if (get_bytes(&tmpElement, sizeof(stringElement), startAddr) == -1) {
 			return false;
 		}
-		std::string functionName = className + "::" + signalMethodList[n].methodSignature.substr(0, start);
-		funcSrc = funcSrc + functionName + "(";
-		//å‚æ•°ä¸ªæ•°ä¸ä¸º0
-		if (end != start + 1) {
-			//å‚æ•°ä¸ªæ•°ä¸º1
-			if (!std::count(signalMethodList[n].methodSignature.begin(), signalMethodList[n].methodSignature.end(), ',')) {
-				funcSrc = funcSrc + signalMethodList[n].methodSignature.substr(start + 1, end - start - 1) + " " + signalMethodList[n].paramName;
-			}
-			else {
-				std::vector<std::string> pararmNameList = recognizeFunctionParamsNameList(signalMethodList[n].paramName);
-				std::vector<std::string> paramTypeList = recognizeFunctionParamsTypeList(signalMethodList[n].methodSignature);
-				if (paramTypeList.size() != pararmNameList.size()) {
-					//å¯èƒ½æ˜¯å“¥å†™çš„ä»£ç å‡ºé—®é¢˜äº†
-					return false;
-				}
-				for (unsigned int k = 0; k < paramTypeList.size(); ++k) {
-					funcSrc = funcSrc + paramTypeList[k] + " " + pararmNameList[k] + ",";
-				}
-				funcSrc.pop_back();
-			}
+		if (tmpElement.startFlag != -1 || tmpElement.unknown) {
+			break;
 		}
-		funcSrc = funcSrc + ")";
-		signalMethodList[n].functionSrc = funcSrc;
-	}
-
-	for (unsigned int n = 0; n < slotMethodList.size(); ++n) {
-		if (slotMethodList[n].retType == "") {
-			slotMethodList[n].retType = "void";
+		std::string tmpStr;
+		if (tmpElement.len) {
+			tmpStr = IDAWrapper::get_shortstring(startAddr + tmpElement.offset);
 		}
-		std::string funcSrc = slotMethodList[n].retType + " ";
-		int start = slotMethodList[n].methodSignature.find('(');
-		int end = slotMethodList[n].methodSignature.find(')');
-		if (start == -1 || end == -1) {
-			return false;
-		}
-		std::string functionName = className + "::" + slotMethodList[n].methodSignature.substr(0, start);
-		funcSrc = funcSrc + functionName + "(";
-		//å‚æ•°ä¸ªæ•°ä¸ä¸º0
-		if (end != start + 1) {
-			//å‚æ•°ä¸ªæ•°ä¸º1
-			if (!std::count(slotMethodList[n].methodSignature.begin(), slotMethodList[n].methodSignature.end(), ',')) {
-				funcSrc = funcSrc + slotMethodList[n].methodSignature.substr(start + 1, end - start - 1) + " " + slotMethodList[n].paramName;
-			}
-			else {
-				std::vector<std::string> pararmNameList = recognizeFunctionParamsNameList(slotMethodList[n].paramName);
-				std::vector<std::string> paramTypeList = recognizeFunctionParamsTypeList(slotMethodList[n].methodSignature);
-				if (paramTypeList.size() != pararmNameList.size()) {
-					//å¯èƒ½æ˜¯å“¥å†™çš„ä»£ç å‡ºé—®é¢˜äº†
-					return false;
-				}
-				for (unsigned int k = 0; k < paramTypeList.size(); ++k) {
-					funcSrc = funcSrc + paramTypeList[k] + " " + pararmNameList[k] + ",";
-				}
-				funcSrc.pop_back();
-			}
-		}
-		funcSrc = funcSrc + ")";
-		slotMethodList[n].functionSrc = funcSrc;
-	}
-
-	//â€”â€”â€”â€”å¼€å§‹è¾“å‡ºç»“æœâ€”â€”â€”â€”â€”â€”
-	msg_clear();
-	int index = 0;
-	msg("signal count(%d):\n", signalMethodList.size());
-	for (unsigned int n = 0; n < signalMethodList.size(); ++n) {
-		msg("%d %s\n", index++, signalMethodList[n].functionSrc.c_str());
-	}
-	msg("slot count(%d):\n", slotMethodList.size());
-	for (unsigned int n = 0; n < slotMethodList.size(); ++n) {
-		msg("%d %s\n", index++, slotMethodList[n].functionSrc.c_str());
-	}
+		stringDataList.push_back(tmpStr);
+		startAddr = startAddr + sizeof(stringElement);
+	};
 	return true;
 }
 
-bool QtMetaParser::parseMetaData(ea_t addr)
+template<typename T>
+bool QtMetaParser<T>::parseMetaData(T addr)
 {
 	struct QtMetaDataHeader
 	{
-		unsigned int revision;
-		unsigned int classname;
-		unsigned int classinfoCount, classinfoData;
-		unsigned int methodCount, methodData;
-		unsigned int propertyCount, propertyData;
-		unsigned int enumeratorCount, enumeratorData;
-		unsigned int constructorCount, constructorData;
-		unsigned int flags;
-		unsigned int signalCount;
+		std::uint32_t revision;
+		std::uint32_t classname;
+		std::uint32_t classinfoCount, classinfoData;
+		std::uint32_t methodCount, methodData;
+		std::uint32_t propertyCount, propertyData;
+		std::uint32_t enumeratorCount, enumeratorData;
+		std::uint32_t constructorCount, constructorData;
+		std::uint32_t flags;
+		std::uint32_t signalCount;
 	};
 
-	ea_t startAddr = addr;
+	T startAddr = addr;
 	QtMetaDataHeader header;
-	get_bytes(&header,sizeof(QtMetaDataHeader), startAddr);
+	get_bytes(&header, sizeof(QtMetaDataHeader), startAddr);
 	startAddr = startAddr + sizeof(QtMetaDataHeader);
 
 
@@ -355,15 +305,15 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 
 	for (unsigned int n = 0; n < signalMethodList.size(); ++n) {
 		ea_t paramAddr = addr + (signalMethodList[n].paramOffset * 4);
-		//ç¬¬ä¸€ä¸ªä¸€å®šæ˜¯è¿”å›å€¼
+		//µÚÒ»¸öÒ»¶¨ÊÇ·µ»ØÖµ
 		signalMethodList[n].retType = getParamType(get_dword(paramAddr));
 		paramAddr = paramAddr + 4;
-		//è§£æå‚æ•°ç±»å‹
+		//½âÎö²ÎÊıÀàĞÍ
 		for (unsigned int m = 0; m < signalMethodList[n].argCount; ++m) {
 			signalMethodList[n].paramsType.push_back(getParamType(get_dword(paramAddr)));
 			paramAddr = paramAddr + 4;
 		}
-		//è§£æå‚æ•°å
+		//½âÎö²ÎÊıÃû
 		for (unsigned int m = 0; m < signalMethodList[n].argCount; ++m) {
 			signalMethodList[n].paramsName.push_back(stringDataList[get_dword(paramAddr)]);
 			paramAddr = paramAddr + 4;
@@ -372,22 +322,22 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 
 	for (unsigned int n = 0; n < slotMethodList.size(); ++n) {
 		ea_t paramAddr = addr + (slotMethodList[n].paramOffset * 4);
-		//ç¬¬ä¸€ä¸ªä¸€å®šæ˜¯è¿”å›å€¼
+		//µÚÒ»¸öÒ»¶¨ÊÇ·µ»ØÖµ
 		slotMethodList[n].retType = getParamType(get_dword(paramAddr));
 		paramAddr = paramAddr + 4;
-		//è§£æå‚æ•°ç±»å‹
+		//½âÎö²ÎÊıÀàĞÍ
 		for (unsigned int m = 0; m < slotMethodList[n].argCount; ++m) {
 			slotMethodList[n].paramsType.push_back(getParamType(get_dword(paramAddr)));
 			paramAddr = paramAddr + 4;
 		}
-		//è§£æå‚æ•°å
+		//½âÎö²ÎÊıÃû
 		for (unsigned int m = 0; m < slotMethodList[n].argCount; ++m) {
 			slotMethodList[n].paramsName.push_back(stringDataList[get_dword(paramAddr)]);
 			paramAddr = paramAddr + 4;
 		}
 	}
 
-	//å¼€å§‹è¾“å‡ºç»“æœ
+	//¿ªÊ¼Êä³ö½á¹û
 	msg_clear();
 	int index = 0;
 	msg("signal count(%d):\n", signalMethodList.size());
@@ -418,55 +368,160 @@ bool QtMetaParser::parseMetaData(ea_t addr)
 	return true;
 }
 
-bool QtMetaParser::parseStringData(ea_t addr)
+template<typename T>
+bool QtMetaParser<T>::parseMetaData_4(T addr)
 {
-	ea_t startAddr = addr;
-	struct stringElement
+	struct QtMetaDataHeader
 	{
-		std::uint32_t startFlag;
-		std::uint32_t len;
-		ea_t unknown;
-		ea_t offset;
+		std::uint32_t revision;
+		std::uint32_t classname;
+		std::uint32_t classinfoCount, classinfoData;
+		std::uint32_t methodCount, methodData;
+		std::uint32_t propertyCount, propertyData;
+		std::uint32_t enumeratorCount, enumeratorData;
+		std::uint32_t constructorCount, constructorData;
+		std::uint32_t flags;
+		std::uint32_t signalCount;
 	};
-	while (true) {
-		stringElement tmpElement = { 0 };
-		if (get_bytes(&tmpElement, sizeof(stringElement), startAddr) == -1) {
+	T startAddr = addr;
+	QtMetaDataHeader header;
+	get_bytes(&header, sizeof(QtMetaDataHeader), startAddr);
+	startAddr = startAddr + sizeof(QtMetaDataHeader);
+
+	std::vector<QMethodData_4> signalMethodList;
+	std::vector<QMethodData_4> slotMethodList;
+
+	for (unsigned int n = 0; n < header.signalCount; ++n) {
+
+		QMethodData_4 tmpMethod;
+		unsigned int signalOffset = get_dword(startAddr);
+		//º¯ÊıÇ©Ãû,°üº¬º¯ÊıÃû³ÆºÍº¯ÊıÀàĞÍ
+		tmpMethod.methodSignature = IDAWrapper::get_shortstring(metaObject.stringdata + signalOffset);
+		//Ö»ÓĞ²ÎÊıµÄÃû³Æ
+		tmpMethod.paramName = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x4));
+		tmpMethod.retType = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x8));
+		unsigned int tag = get_dword(startAddr + 0xC);
+		unsigned int flags = get_dword(startAddr + 0x10);
+		signalMethodList.push_back(tmpMethod);
+		startAddr = startAddr + 0x14;
+	}
+
+	for (unsigned int n = 0; n < header.methodCount - header.signalCount; ++n) {
+		QMethodData_4 tmpMethod;
+		unsigned int slotOffset = get_dword(startAddr);
+		//º¯ÊıÇ©Ãû,°üº¬º¯ÊıÃû³ÆºÍº¯ÊıÀàĞÍ
+		tmpMethod.methodSignature = IDAWrapper::get_shortstring(metaObject.stringdata + slotOffset);
+		//Ö»ÓĞ²ÎÊıµÄÃû³Æ
+		tmpMethod.paramName = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x4));
+		tmpMethod.retType = IDAWrapper::get_shortstring(metaObject.stringdata + get_dword(startAddr + 0x8));
+		unsigned int tag = get_dword(startAddr + 0xC);
+		unsigned int flags = get_dword(startAddr + 0x10);
+		slotMethodList.push_back(tmpMethod);
+		startAddr = startAddr + 0x14;
+	}
+
+	//¿ªÊ¼Éú³ÉÍêÕûµÄº¯ÊıÇ©Ãû
+	std::string className = IDAWrapper::get_shortstring(metaObject.stringdata);
+	for (unsigned int n = 0; n < signalMethodList.size(); ++n) {
+		if (signalMethodList[n].retType == "") {
+			signalMethodList[n].retType = "void";
+		}
+		std::string funcSrc = signalMethodList[n].retType + " ";
+		int start = signalMethodList[n].methodSignature.find('(');
+		int end = signalMethodList[n].methodSignature.find(')');
+		if (start == -1 || end == -1) {
 			return false;
 		}
-		if (tmpElement.startFlag != -1 || tmpElement.unknown) {
-			break;
+		std::string functionName = className + "::" + signalMethodList[n].methodSignature.substr(0, start);
+		funcSrc = funcSrc + functionName + "(";
+		//²ÎÊı¸öÊı²»Îª0
+		if (end != start + 1) {
+			//²ÎÊı¸öÊıÎª1
+			if (!std::count(signalMethodList[n].methodSignature.begin(), signalMethodList[n].methodSignature.end(), ',')) {
+				funcSrc = funcSrc + signalMethodList[n].methodSignature.substr(start + 1, end - start - 1) + " " + signalMethodList[n].paramName;
+			}
+			else {
+				std::vector<std::string> pararmNameList = recognizeFunctionParamsNameList(signalMethodList[n].paramName);
+				std::vector<std::string> paramTypeList = recognizeFunctionParamsTypeList(signalMethodList[n].methodSignature);
+				if (paramTypeList.size() != pararmNameList.size()) {
+					//¿ÉÄÜÊÇ¸çĞ´µÄ´úÂë³öÎÊÌâÁË
+					return false;
+				}
+				for (unsigned int k = 0; k < paramTypeList.size(); ++k) {
+					funcSrc = funcSrc + paramTypeList[k] + " " + pararmNameList[k] + ",";
+				}
+				funcSrc.pop_back();
+			}
 		}
-		std::string tmpStr;
-		if (tmpElement.len) {
-			tmpStr = IDAWrapper::get_shortstring(startAddr + tmpElement.offset);
+		funcSrc = funcSrc + ")";
+		signalMethodList[n].functionSrc = funcSrc;
+	}
+
+	for (unsigned int n = 0; n < slotMethodList.size(); ++n) {
+		if (slotMethodList[n].retType == "") {
+			slotMethodList[n].retType = "void";
 		}
-		stringDataList.push_back(tmpStr);
-		startAddr = startAddr + sizeof(stringElement);
-	};
+		std::string funcSrc = slotMethodList[n].retType + " ";
+		int start = slotMethodList[n].methodSignature.find('(');
+		int end = slotMethodList[n].methodSignature.find(')');
+		if (start == -1 || end == -1) {
+			return false;
+		}
+		std::string functionName = className + "::" + slotMethodList[n].methodSignature.substr(0, start);
+		funcSrc = funcSrc + functionName + "(";
+		//²ÎÊı¸öÊı²»Îª0
+		if (end != start + 1) {
+			//²ÎÊı¸öÊıÎª1
+			if (!std::count(slotMethodList[n].methodSignature.begin(), slotMethodList[n].methodSignature.end(), ',')) {
+				funcSrc = funcSrc + slotMethodList[n].methodSignature.substr(start + 1, end - start - 1) + " " + slotMethodList[n].paramName;
+			}
+			else {
+				std::vector<std::string> pararmNameList = recognizeFunctionParamsNameList(slotMethodList[n].paramName);
+				std::vector<std::string> paramTypeList = recognizeFunctionParamsTypeList(slotMethodList[n].methodSignature);
+				if (paramTypeList.size() != pararmNameList.size()) {
+					//¿ÉÄÜÊÇ¸çĞ´µÄ´úÂë³öÎÊÌâÁË
+					return false;
+				}
+				for (unsigned int k = 0; k < paramTypeList.size(); ++k) {
+					funcSrc = funcSrc + paramTypeList[k] + " " + pararmNameList[k] + ",";
+				}
+				funcSrc.pop_back();
+			}
+		}
+		funcSrc = funcSrc + ")";
+		slotMethodList[n].functionSrc = funcSrc;
+	}
+
+	//¡ª¡ª¡ª¡ª¿ªÊ¼Êä³ö½á¹û¡ª¡ª¡ª¡ª¡ª¡ª
+	msg_clear();
+	int index = 0;
+	msg("signal count(%d):\n", signalMethodList.size());
+	for (unsigned int n = 0; n < signalMethodList.size(); ++n) {
+		msg("%d %s\n", index++, signalMethodList[n].functionSrc.c_str());
+	}
+	msg("slot count(%d):\n", slotMethodList.size());
+	for (unsigned int n = 0; n < slotMethodList.size(); ++n) {
+		msg("%d %s\n", index++, slotMethodList[n].functionSrc.c_str());
+	}
 	return true;
 }
 
-
-
-void QtMetaParser::StartParse()
+template<typename T>
+void QtMetaParser<T>::StartParse()
 {
-	std::vector<std::string> aa = recognizeFunctionParamsNameList(",");
-
 	ea_t addr = get_screen_ea();
-	msg("parse addr:%08X\n",addr);
+	msg("parse addr:%08X\n", addr);
 	metaObject = { 0 };
 	if (get_bytes(&metaObject, sizeof(metaObject), addr) != sizeof(metaObject)) {
 		int a = 0;
 	}
-
-	//è·å–QTç‰ˆæœ¬å·
+	//»ñÈ¡QT°æ±¾ºÅ
 	int revision = get_dword(metaObject.data);
-	
 	if (revision == 5) {
-		//Qt4.xä½ç‰ˆæœ¬
+		//Qt4.xµÍ°æ±¾
 		parseMetaData_4(metaObject.data);
 	}
-	//To do..ä¹Ÿè®¸æœ‰æ›´å¤šåˆ†æ”¯
+	//To do..Ò²ĞíÓĞ¸ü¶à·ÖÖ§
 	else {
 		parseStringData(metaObject.stringdata);
 		parseMetaData(metaObject.data);
